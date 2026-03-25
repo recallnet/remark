@@ -31,12 +31,21 @@ pnpm exec recall-docs-governance init
    - `.remarkrc.mjs`
    - `docs/INDEX.md`
    - `AGENTS.md` docs-governance section
-5. Adjust policy defaults for the repo:
-   - review windows
-   - in-scope paths
-   - required roots
-   - orphan allowlists
-6. Run:
+5. Start from the default operating model unless the repo has a real reason not to:
+   - default active docs to `periodic-7`
+   - set `docs/INDEX.md` to `generated`
+   - keep `docs/**` in scope
+   - root the graph from `docs/INDEX.md`
+   - exclude `docs/templates/**` from freshness and orphan checks
+   - use `historical` only for true archival docs
+   - use `codebound` only when the doc must change with code
+6. Adjust only the repo-specific policy surface:
+   - in-scope paths outside `docs/**`
+   - extra rooted entry docs
+   - orphan allowlists for deliberate exceptions
+   - owner/team metadata
+   - narrower or broader review windows if the repo truly needs them
+7. Run:
 
 ```bash
 pnpm docs:lint
@@ -48,6 +57,7 @@ pnpm docs:lint
 - docs linting uses remark plugins instead of copied regex parsers
 - every in-scope doc is reachable from rooted entry docs
 - review expirations fail lint deterministically
+- active docs expire quickly enough to force reality checks instead of passive drift
 - repo guidance tells contributors not to bypass the policy
 
 ## When customizing
@@ -55,3 +65,9 @@ pnpm docs:lint
 Customize policy, schema, and doc roots. Do not fork the plugin logic unless the repo has a real semantic gap.
 
 If the repo already has older docs scripts, replace them with the preset unless there is a verified behavior the preset cannot express.
+
+## Freshness guidance
+
+- Prefer deleting stale docs before re-dating them.
+- Re-date only when the content is already accurate as written.
+- Mark docs `historical` only when they are true records, not as a way to dodge upkeep.

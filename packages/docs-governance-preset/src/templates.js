@@ -1,7 +1,7 @@
 export const defaultDocsPolicy = {
   "docs_policy/v1": {
     freshness: {
-      default_review_policy: "periodic-30",
+      default_review_policy: "periodic-7",
       review_policies: [
         {
           id: "codebound",
@@ -16,15 +16,15 @@ export const defaultDocsPolicy = {
           mode: "historical",
         },
         {
-          id: "periodic-30",
+          id: "periodic-7",
           mode: "periodic",
-          max_age_days: 30,
+          max_age_days: 7,
         },
       ],
       path_defaults: [
         {
           path: "docs/**",
-          review_policy: "periodic-30",
+          review_policy: "periodic-7",
         },
         {
           path: "docs/INDEX.md",
@@ -116,7 +116,10 @@ export function createAgentsSection() {
 
 - Use the repo docs governance stack instead of hand-rolled markdown parsing.
 - Keep docs frontmatter valid and review dates current.
+- Default active docs to \`periodic-7\`; use \`generated\`, \`codebound\`, or \`historical\` only when they are genuinely correct.
 - Add new docs to the rooted docs graph so orphan checks stay clean.
+- Root the graph from \`docs/INDEX.md\` unless the repo has a stronger canonical entrypoint.
+- Prefer deleting stale docs over simply re-dating them when they no longer teach current reality.
 - Run \`pnpm docs:lint\` before merging doc structure or policy changes.
 `;
 }
