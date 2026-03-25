@@ -1,5 +1,13 @@
 # @recallnet/remark-lint-docs-reachability
 
+## 0.2.1
+
+### Patch Changes
+
+- Skip broken symlinks that raise ENOENT during repository scans so docs linting does not crash on invalid repo-local skill links.
+- Updated dependencies
+  - @recallnet/docs-governance-policy@0.2.1
+
 ## 0.2.0
 
 ### Minor Changes

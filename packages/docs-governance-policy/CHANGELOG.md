@@ -1,5 +1,11 @@
 # @recallnet/docs-governance-policy
 
+## 0.2.1
+
+### Patch Changes
+
+- Skip broken symlinks that raise ENOENT during repository scans so docs linting does not crash on invalid repo-local skill links.
+
 ## 0.2.0
 
 ### Minor Changes
