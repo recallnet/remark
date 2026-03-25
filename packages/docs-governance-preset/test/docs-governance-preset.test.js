@@ -4,7 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { createDocsGovernanceConfig, initDocsGovernanceRepo } from "../src/index.js";
+import {
+  createDocsGovernanceConfig,
+  initDocsGovernanceRepo,
+  lintDocsGovernance,
+} from "../src/index.js";
 
 test("createDocsGovernanceConfig wires the expected plugin stack", () => {
   const config = createDocsGovernanceConfig();
@@ -30,4 +34,26 @@ test("initDocsGovernanceRepo writes default files and package scripts", () => {
     /"docs:lint": "recall-docs-governance lint"/
   );
   assert.equal(result.created.includes("docs/docs-policy.json"), true);
+});
+
+test("lintDocsGovernance does not depend on remark-cli/package.json exports", () => {
+  const repoDir = mkdtempSync(join(tmpdir(), "docs-governance-lint-"));
+  mkdirSync(join(repoDir, "docs"), { recursive: true });
+  initDocsGovernanceRepo({ cwd: repoDir, today: "2026-03-25" });
+  writeFileSync(
+    join(repoDir, "docs", "docs-policy.json"),
+    JSON.stringify(
+      {
+        "docs_policy/v1": {
+          in_scope_paths: [],
+        },
+      },
+      null,
+      2
+    )
+  );
+
+  const result = lintDocsGovernance({ cwd: repoDir });
+
+  assert.deepEqual(result, { status: 0, files: [] });
 });

@@ -1,5 +1,11 @@
 # @recallnet/docs-governance-preset
 
+## 0.2.2
+
+### Patch Changes
+
+- Stop resolving `remark-cli/package.json` directly during `recall-docs-governance lint`, and invoke the `remark` executable in an exports-safe way instead.
+
 ## 0.2.1
 
 ### Patch Changes

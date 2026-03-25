@@ -1,6 +1,5 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 
 import { collectInScopeMarkdownFiles, loadDocsPolicy } from "@recallnet/docs-governance-policy";
@@ -133,15 +132,19 @@ export function initDocsGovernanceRepo(options = {}) {
   };
 }
 
-function resolveRemarkCliPath() {
-  const require = createRequire(import.meta.url);
-  const packageJsonPath = require.resolve("remark-cli/package.json");
-  const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8"));
-  const binField = packageJson.bin;
-  const relativeBinPath =
-    typeof binField === "string" ? binField : (binField.remark ?? Object.values(binField)[0]);
+function resolveRemarkCliCommand(cwd) {
+  const candidatePaths = [
+    resolve(cwd, "node_modules", ".bin", "remark"),
+    resolve(import.meta.dirname, "..", "node_modules", ".bin", "remark"),
+  ];
 
-  return resolve(dirname(packageJsonPath), relativeBinPath);
+  for (const candidatePath of candidatePaths) {
+    if (existsSync(candidatePath)) {
+      return candidatePath;
+    }
+  }
+
+  return "remark";
 }
 
 function collectChangedFiles(cwd, inScopeFiles) {
@@ -176,8 +179,8 @@ export function lintDocsGovernance(options = {}) {
     return { status: 0, files: [] };
   }
 
-  const remarkCliPath = resolveRemarkCliPath();
-  execFileSync(process.execPath, [remarkCliPath, ...files, "--frail"], {
+  const remarkCliCommand = resolveRemarkCliCommand(cwd);
+  execFileSync(remarkCliCommand, [...files, "--frail"], {
     cwd,
     stdio: "inherit",
   });
