@@ -72,11 +72,45 @@ jobs:
           git commit -m "chore: version packages [skip ci]" || echo "No changes to commit"
           git push
 
+      - name: Snapshot existing tags
+        if: steps.changesets.outputs.has_changesets == 'true'
+        run: git tag --list | sort > /tmp/tags-before-publish.txt
+
       - name: Publish packages
         if: steps.changesets.outputs.has_changesets == 'true'
         env:
           NPM_CONFIG_PROVENANCE: "true"
         run: pnpm changeset publish
+
+      - name: Create GitHub releases for published tags
+        if: steps.changesets.outputs.has_changesets == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git fetch --tags --force
+          git tag --list | sort > /tmp/tags-after-publish.txt
+          new_tags=$(comm -13 /tmp/tags-before-publish.txt /tmp/tags-after-publish.txt)
+
+          if [ -z "$new_tags" ]; then
+            echo "No new tags were created by publish; skipping GitHub Releases."
+            exit 0
+          fi
+
+          while IFS= read -r tag; do
+            [ -n "$tag" ] || continue
+
+            if gh release view "$tag" >/dev/null 2>&1; then
+              echo "GitHub Release already exists for $tag; skipping."
+              continue
+            fi
+
+            gh release create "$tag" \
+              --title "$tag" \
+              --verify-tag \
+              --generate-notes
+          done <<EOF
+          $new_tags
+          EOF
       - name: Open ticket on failure
         if: failure()
         env:
