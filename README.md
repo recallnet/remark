@@ -197,6 +197,7 @@ maintain a separate docs schema or folder contract.
 ```bash
 pnpm add -D @recallnet/docs-governance-preset
 pnpm exec recall-docs-governance init --profile repo-docs
+pnpm exec recall-docs-governance populate --profile repo-docs
 pnpm docs:lint
 ```
 
@@ -209,6 +210,18 @@ That bootstraps:
 - `docs/templates/*.md`
 - docs lint scripts
 - `AGENTS.md` guidance for repo contributors
+
+Then `populate` can synthesize first-pass docs from committed repo facts such as:
+
+- root `package.json` scripts
+- workspace package manifests
+- `.github/workflows/*`
+- `.husky/*`
+- `README.md`
+- `AGENTS.md`
+
+The generator is intentionally bounded. It creates canonical explanation/reference/how-to docs from
+repo structure instead of inventing freeform prose.
 
 Recommended config:
 
