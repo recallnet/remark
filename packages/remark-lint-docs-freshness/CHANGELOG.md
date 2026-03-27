@@ -1,5 +1,12 @@
 # @recallnet/remark-lint-docs-freshness
 
+## 0.2.4
+
+### Patch Changes
+
+- d1ec56c: Use unified's `vfile-matter` to read YAML frontmatter in the docs freshness
+  rule instead of manually parsing the YAML node.
+
 ## 0.2.3
 
 ### Patch Changes
