@@ -97,22 +97,14 @@ export function initDocsGovernanceRepo(options = {}) {
 
   const schemaPath = resolve(cwd, "docs", "docs-frontmatter.schema.json");
   if (
-    writeFileIfMissing(
-      schemaPath,
-      `${JSON.stringify(profile.frontmatterSchema, null, 2)}\n`,
-      force
-    )
+    writeFileIfMissing(schemaPath, `${JSON.stringify(profile.frontmatterSchema, null, 2)}\n`, force)
   ) {
     created.push("docs/docs-frontmatter.schema.json");
   }
 
   const remarkConfigPath = resolve(cwd, ".remarkrc.mjs");
   if (
-    writeFileIfMissing(
-      remarkConfigPath,
-      createRemarkConfigSource({ profile: profile.id }),
-      force
-    )
+    writeFileIfMissing(remarkConfigPath, createRemarkConfigSource({ profile: profile.id }), force)
   ) {
     created.push(".remarkrc.mjs");
   }

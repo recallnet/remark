@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
@@ -342,9 +349,13 @@ test("populateDocsGovernanceRepo writes first-pass docs and updates the index", 
   mkdirSync(join(repoDir, "packages", "alpha"), { recursive: true });
   mkdirSync(join(repoDir, "packages", "beta"), { recursive: true });
   execFileSync("git", ["init", "-q"], { cwd: repoDir });
-  execFileSync("git", ["remote", "add", "origin", "https://github.com/example/populate-fixture.git"], {
-    cwd: repoDir,
-  });
+  execFileSync(
+    "git",
+    ["remote", "add", "origin", "https://github.com/example/populate-fixture.git"],
+    {
+      cwd: repoDir,
+    }
+  );
   writeFileSync(
     join(repoDir, "package.json"),
     JSON.stringify(
@@ -472,9 +483,13 @@ test("populateDocsGovernanceRepo keeps sparse repos bounded", () => {
   const repoDir = mkdtempSync(join(tmpdir(), "docs-governance-populate-minimal-"));
   mkdirSync(join(repoDir, "docs"), { recursive: true });
   execFileSync("git", ["init", "-q"], { cwd: repoDir });
-  execFileSync("git", ["remote", "add", "origin", "https://github.com/example/minimal-fixture.git"], {
-    cwd: repoDir,
-  });
+  execFileSync(
+    "git",
+    ["remote", "add", "origin", "https://github.com/example/minimal-fixture.git"],
+    {
+      cwd: repoDir,
+    }
+  );
 
   initDocsGovernanceRepo({ cwd: repoDir, today: "2026-03-25", profile: "repo-docs" });
   writeFileSync(
@@ -501,7 +516,10 @@ export default createDocsGovernanceConfig({
   assert.deepEqual(result.created, ["docs/explanation/system-architecture.md"]);
   assert.deepEqual(result.updated, ["docs/INDEX.md"]);
   assert.deepEqual(result.warnings, []);
-  assert.equal(existsSync(join(repoDir, "docs", "reference", "commands-and-quality-gates.md")), false);
+  assert.equal(
+    existsSync(join(repoDir, "docs", "reference", "commands-and-quality-gates.md")),
+    false
+  );
   assert.equal(existsSync(join(repoDir, "docs", "reference", "workspace-packages.md")), false);
   assert.equal(existsSync(join(repoDir, "docs", "how-to", "run-local-quality-checks.md")), false);
 
