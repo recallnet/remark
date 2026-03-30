@@ -1,5 +1,12 @@
 # @recallnet/remark-lint-docs-taxonomy
 
+## 0.2.2
+
+### Patch Changes
+
+- Updated dependencies [eca7021]
+  - @recallnet/docs-governance-policy@0.3.1
+
 ## 0.2.1
 
 ### Patch Changes

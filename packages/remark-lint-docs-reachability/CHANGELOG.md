@@ -1,5 +1,14 @@
 # @recallnet/remark-lint-docs-reachability
 
+## 0.2.6
+
+### Patch Changes
+
+- eca7021: Republish every package so the current release line is available from both
+  npmjs and GitHub Packages after the updated publish workflow runs.
+- Updated dependencies [eca7021]
+  - @recallnet/docs-governance-policy@0.3.1
+
 ## 0.2.5
 
 ### Patch Changes
