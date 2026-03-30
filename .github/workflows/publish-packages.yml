@@ -177,13 +177,27 @@ jobs:
           git commit -m "chore: version packages [skip ci]" || echo "No changes to commit"
           git push
 
+      - name: Pack release tarballs
+        if: >-
+          steps.release_mode.outputs.should_publish == 'true' &&
+          steps.releases.outputs.release_count != '0'
+        id: packed_releases
+        env:
+          RELEASE_MANIFEST: ${{ steps.releases.outputs.release_manifest }}
+        run: |
+          node scripts/pack-release-artifacts.mjs \
+            --manifest "$RELEASE_MANIFEST" \
+            --output "$RUNNER_TEMP/packed-releases.json" \
+            --tarball-dir "$RUNNER_TEMP/release-tarballs"
+          echo "release_manifest=$RUNNER_TEMP/packed-releases.json" >> "$GITHUB_OUTPUT"
+
       - name: Publish packages to npmjs
         if: >-
           steps.release_mode.outputs.should_publish == 'true' &&
           steps.releases.outputs.release_count != '0'
         env:
           NPM_CONFIG_PROVENANCE: "true"
-          RELEASE_MANIFEST: ${{ steps.releases.outputs.release_manifest }}
+          RELEASE_MANIFEST: ${{ steps.packed_releases.outputs.release_manifest }}
         run: |
           node <<'EOF'
           const fs = require('node:fs');
@@ -213,8 +227,8 @@ jobs:
 
             execFileSync(
               'npm',
-              ['publish', '.', '--provenance', '--registry=https://registry.npmjs.org'],
-              { cwd: release.directory, stdio: 'inherit' },
+              [ 'publish', release.tarballPath, '--provenance', '--registry=https://registry.npmjs.org' ],
+              { stdio: 'inherit' },
             );
           }
           EOF
@@ -236,7 +250,7 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_CONFIG_PROVENANCE: "false"
-          RELEASE_MANIFEST: ${{ steps.releases.outputs.release_manifest }}
+          RELEASE_MANIFEST: ${{ steps.packed_releases.outputs.release_manifest }}
         run: |
           node <<'EOF'
           const fs = require('node:fs');
@@ -266,8 +280,8 @@ jobs:
 
             execFileSync(
               'npm',
-              ['publish', '.', '--registry=https://npm.pkg.github.com'],
-              { cwd: release.directory, stdio: 'inherit' },
+              ['publish', release.tarballPath, '--registry=https://npm.pkg.github.com'],
+              { stdio: 'inherit' },
             );
           }
           EOF
