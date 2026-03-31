@@ -1,5 +1,11 @@
 # @recallnet/docs-governance-preset
 
+## 0.3.4
+
+### Patch Changes
+
+- 424aed6: Improve `populate` repo discovery so generated docs reflect declared workspaces and common implementation roots like `src/`, `internal/`, and `executors/` instead of assuming only `packages/*` layouts.
+
 ## 0.3.3
 
 ### Patch Changes
