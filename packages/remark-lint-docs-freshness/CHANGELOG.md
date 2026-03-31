@@ -1,5 +1,11 @@
 # @recallnet/remark-lint-docs-freshness
 
+## 0.2.7
+
+### Patch Changes
+
+- 958956c: Republish the docs governance runtime packages through packed tarballs so published manifests contain concrete internal dependency versions instead of unresolved `workspace:*` ranges.
+
 ## 0.2.6
 
 ### Patch Changes

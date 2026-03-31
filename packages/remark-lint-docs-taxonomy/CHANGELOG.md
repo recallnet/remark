@@ -1,5 +1,11 @@
 # @recallnet/remark-lint-docs-taxonomy
 
+## 0.2.3
+
+### Patch Changes
+
+- 958956c: Republish the docs governance runtime packages through packed tarballs so published manifests contain concrete internal dependency versions instead of unresolved `workspace:*` ranges.
+
 ## 0.2.2
 
 ### Patch Changes

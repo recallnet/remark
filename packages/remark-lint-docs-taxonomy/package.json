@@ -1,6 +1,6 @@
 {
   "name": "@recallnet/remark-lint-docs-taxonomy",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Remark plugin that enforces policy-driven docs taxonomy paths and filenames.",
   "license": "MIT",
   "type": "module",
