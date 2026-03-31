@@ -348,6 +348,7 @@ test("populateDocsGovernanceRepo writes first-pass docs and updates the index", 
   mkdirSync(join(repoDir, ".husky"), { recursive: true });
   mkdirSync(join(repoDir, "packages", "alpha"), { recursive: true });
   mkdirSync(join(repoDir, "packages", "beta"), { recursive: true });
+  mkdirSync(join(repoDir, "executors", "gamma"), { recursive: true });
   execFileSync("git", ["init", "-q"], { cwd: repoDir });
   execFileSync(
     "git",
@@ -363,7 +364,6 @@ test("populateDocsGovernanceRepo writes first-pass docs and updates the index", 
         name: "fixture",
         private: true,
         packageManager: "pnpm@10.32.1",
-        workspaces: ["packages/*"],
         scripts: {
           lint: "eslint .",
           test: "node --test packages/*/test/*.test.js",
@@ -375,6 +375,10 @@ test("populateDocsGovernanceRepo writes first-pass docs and updates the index", 
       null,
       2
     )
+  );
+  writeFileSync(
+    join(repoDir, "pnpm-workspace.yaml"),
+    'packages:\n  - "executors/*"\n  - "packages/*"\n'
   );
   writeFileSync(join(repoDir, "README.md"), "# Fixture\n\nA fixture repo.\n");
   writeFileSync(join(repoDir, "AGENTS.md"), "# AGENTS\n");
@@ -398,6 +402,18 @@ test("populateDocsGovernanceRepo writes first-pass docs and updates the index", 
       {
         name: "@fixture/beta",
         description: "Beta package.",
+      },
+      null,
+      2
+    )
+  );
+  writeFileSync(
+    join(repoDir, "executors", "gamma", "package.json"),
+    JSON.stringify(
+      {
+        name: "@fixture/gamma",
+        description: "Gamma executor.",
+        dependencies: { "@fixture/alpha": "workspace:*" },
       },
       null,
       2
@@ -429,11 +445,13 @@ export default createDocsGovernanceConfig({
   assert.equal(result.created.includes("docs/explanation/system-architecture.md"), true);
   assert.equal(result.created.includes("docs/reference/commands-and-quality-gates.md"), true);
   assert.equal(result.created.includes("docs/reference/workspace-packages.md"), true);
+  assert.equal(result.created.includes("docs/reference/implementation-roots.md"), true);
   assert.equal(result.created.includes("docs/how-to/run-local-quality-checks.md"), true);
 
   const indexSource = readFileSync(join(repoDir, "docs", "INDEX.md"), "utf8");
   assert.match(indexSource, /System architecture/);
   assert.match(indexSource, /Workspace packages/);
+  assert.match(indexSource, /Implementation roots/);
 
   const packagesSource = readFileSync(
     join(repoDir, "docs", "reference", "workspace-packages.md"),
@@ -441,6 +459,24 @@ export default createDocsGovernanceConfig({
   );
   assert.match(packagesSource, /@fixture\/alpha/);
   assert.match(packagesSource, /@fixture\/beta/);
+  assert.match(packagesSource, /@fixture\/gamma/);
+
+  const architectureSource = readFileSync(
+    join(repoDir, "docs", "explanation", "system-architecture.md"),
+    "utf8"
+  );
+  assert.match(architectureSource, /A fixture repo\./);
+  assert.match(architectureSource, /`executors\/\*`/);
+  assert.match(architectureSource, /`executors\/`/);
+  assert.doesNotMatch(architectureSource, /docs-governance workflow/);
+  assert.doesNotMatch(architectureSource, /Runtime Control Loop/);
+
+  const implementationRootsSource = readFileSync(
+    join(repoDir, "docs", "reference", "implementation-roots.md"),
+    "utf8"
+  );
+  assert.match(implementationRootsSource, /`packages\/`/);
+  assert.match(implementationRootsSource, /`executors\/`/);
 
   const lintResult = lintDocsGovernance({ cwd: repoDir });
   assert.equal(lintResult.status, 0);
@@ -521,13 +557,99 @@ export default createDocsGovernanceConfig({
     false
   );
   assert.equal(existsSync(join(repoDir, "docs", "reference", "workspace-packages.md")), false);
+  assert.equal(existsSync(join(repoDir, "docs", "reference", "implementation-roots.md")), false);
   assert.equal(existsSync(join(repoDir, "docs", "how-to", "run-local-quality-checks.md")), false);
 
   const architectureSource = readFileSync(
     join(repoDir, "docs", "explanation", "system-architecture.md"),
     "utf8"
   );
-  assert.match(architectureSource, /does not expose workspace packages/);
+  assert.match(architectureSource, /No workspace package manifests were detected/);
+
+  const lintResult = lintDocsGovernance({ cwd: repoDir });
+  assert.equal(lintResult.status, 0);
+});
+
+test("populateDocsGovernanceRepo handles non-monorepo implementation roots", () => {
+  const repoDir = mkdtempSync(join(tmpdir(), "docs-governance-populate-src-root-"));
+  mkdirSync(join(repoDir, "docs"), { recursive: true });
+  mkdirSync(join(repoDir, "src", "strategy"), { recursive: true });
+  mkdirSync(join(repoDir, "internal", "signals"), { recursive: true });
+  mkdirSync(join(repoDir, ".github", "workflows"), { recursive: true });
+  execFileSync("git", ["init", "-q"], { cwd: repoDir });
+  execFileSync("git", ["remote", "add", "origin", "https://github.com/example/src-fixture.git"], {
+    cwd: repoDir,
+  });
+  writeFileSync(
+    join(repoDir, "package.json"),
+    JSON.stringify(
+      {
+        name: "src-fixture",
+        private: true,
+        packageManager: "pnpm@10.32.1",
+        scripts: {
+          lint: "eslint .",
+          build: "tsc -p tsconfig.json",
+        },
+      },
+      null,
+      2
+    )
+  );
+  writeFileSync(
+    join(repoDir, "README.md"),
+    "# Src Fixture\n\nA trading strategy repo.\n\n## Features\n\nSignal execution details.\n"
+  );
+  writeFileSync(join(repoDir, "src", "index.ts"), "export const main = true;\n");
+  writeFileSync(join(repoDir, "internal", "signals", "index.ts"), "export const signal = true;\n");
+  writeFileSync(join(repoDir, ".github", "workflows", "ci.yml"), "name: ci\n");
+
+  initDocsGovernanceRepo({ cwd: repoDir, today: "2026-03-25", profile: "repo-docs" });
+  writeFileSync(
+    join(repoDir, ".remarkrc.mjs"),
+    `import { createDocsGovernanceConfig } from ${JSON.stringify(
+      pathToFileURL(resolve(process.cwd(), "packages/docs-governance-preset/src/index.js")).href
+    )};
+
+export default createDocsGovernanceConfig({
+  profile: "repo-docs",
+  policyPath: "./docs/docs-policy.json",
+  frontmatterSchemaPath: "./docs/docs-frontmatter.schema.json",
+  schemaPatterns: ["docs/"]
+});
+`
+  );
+
+  const result = populateDocsGovernanceRepo({
+    cwd: repoDir,
+    today: "2026-03-25",
+    profile: "repo-docs",
+  });
+
+  assert.equal(result.created.includes("docs/explanation/system-architecture.md"), true);
+  assert.equal(result.created.includes("docs/reference/implementation-roots.md"), true);
+  assert.equal(result.created.includes("docs/reference/workspace-packages.md"), false);
+
+  const architectureSource = readFileSync(
+    join(repoDir, "docs", "explanation", "system-architecture.md"),
+    "utf8"
+  );
+  assert.match(architectureSource, /A trading strategy repo\./);
+  assert.match(architectureSource, /`src\/`/);
+  assert.match(architectureSource, /`internal\/`/);
+  assert.doesNotMatch(architectureSource, /docs-governance workflow/);
+  assert.doesNotMatch(architectureSource, /Signal execution details\./);
+
+  const implementationRootsSource = readFileSync(
+    join(repoDir, "docs", "reference", "implementation-roots.md"),
+    "utf8"
+  );
+  assert.match(implementationRootsSource, /`src\/`/);
+  assert.match(implementationRootsSource, /`internal\/`/);
+
+  const indexSource = readFileSync(join(repoDir, "docs", "INDEX.md"), "utf8");
+  assert.match(indexSource, /Implementation roots/);
+  assert.doesNotMatch(indexSource, /Workspace packages/);
 
   const lintResult = lintDocsGovernance({ cwd: repoDir });
   assert.equal(lintResult.status, 0);

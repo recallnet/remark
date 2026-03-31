@@ -1,6 +1,18 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, extname, join, relative, resolve } from "node:path";
 
+const COMMON_IMPLEMENTATION_ROOTS = [
+  "src",
+  "app",
+  "apps",
+  "services",
+  "executors",
+  "internal",
+  "lib",
+  "server",
+  "client",
+];
+
 function normalizePath(pathValue) {
   return pathValue.replace(/\\/g, "/");
 }
@@ -30,6 +42,53 @@ function readJsonIfExists(pathValue) {
   return JSON.parse(source);
 }
 
+function readWorkspacePatterns(cwd, rootPackageJson) {
+  const patterns = [];
+
+  if (Array.isArray(rootPackageJson?.workspaces)) {
+    patterns.push(...rootPackageJson.workspaces);
+  } else if (Array.isArray(rootPackageJson?.workspaces?.packages)) {
+    patterns.push(...rootPackageJson.workspaces.packages);
+  }
+
+  const pnpmWorkspaceSource = readTextIfExists(resolve(cwd, "pnpm-workspace.yaml"));
+  if (pnpmWorkspaceSource) {
+    let inPackagesBlock = false;
+
+    for (const line of pnpmWorkspaceSource.split(/\r?\n/u)) {
+      const trimmed = line.trim();
+
+      if (!inPackagesBlock) {
+        if (trimmed === "packages:") {
+          inPackagesBlock = true;
+        }
+        continue;
+      }
+
+      if (trimmed === "" || trimmed.startsWith("#")) {
+        continue;
+      }
+
+      if (/^\s*-\s+/u.test(line)) {
+        const value = line
+          .replace(/^\s*-\s+/u, "")
+          .trim()
+          .replace(/^['"]|['"]$/gu, "");
+        if (value) {
+          patterns.push(value);
+        }
+        continue;
+      }
+
+      if (!/^\s/u.test(line)) {
+        break;
+      }
+    }
+  }
+
+  return [...new Set(patterns.map((pattern) => normalizePath(pattern).replace(/^\.\//u, "")))];
+}
+
 function detectPackageManager(cwd, rootPackageJson) {
   if (typeof rootPackageJson?.packageManager === "string") {
     return rootPackageJson.packageManager.split("@")[0];
@@ -54,39 +113,91 @@ function detectPackageManager(cwd, rootPackageJson) {
   return "pnpm";
 }
 
-function collectPackageManifests(cwd) {
-  const packagesDir = resolve(cwd, "packages");
-  if (!existsSync(packagesDir)) {
+function resolveWorkspaceDirectories(cwd, pattern) {
+  const normalizedPattern = normalizePath(pattern).replace(/^\.\//u, "");
+  if (!normalizedPattern || normalizedPattern.startsWith("!")) {
     return [];
   }
 
-  const manifests = [];
-  for (const entry of readdirSync(packagesDir, { withFileTypes: true })) {
-    if (!entry.isDirectory()) {
-      continue;
+  const segments = normalizedPattern.split("/").filter(Boolean);
+  const matches = [];
+
+  function visit(currentAbsolutePath, currentRelativePath, index) {
+    if (index === segments.length) {
+      matches.push({
+        absolutePath: currentAbsolutePath,
+        relativePath: currentRelativePath,
+      });
+      return;
     }
 
-    const manifestPath = join(packagesDir, entry.name, "package.json");
-    const manifest = readJsonIfExists(manifestPath);
-    if (!manifest) {
-      continue;
+    const segment = segments[index];
+
+    if (segment === "*") {
+      if (!existsSync(currentAbsolutePath)) {
+        return;
+      }
+
+      for (const entry of readdirSync(currentAbsolutePath, { withFileTypes: true })) {
+        if (!entry.isDirectory()) {
+          continue;
+        }
+
+        visit(
+          join(currentAbsolutePath, entry.name),
+          normalizePath(join(currentRelativePath, entry.name)),
+          index + 1
+        );
+      }
+      return;
     }
 
-    manifests.push({
-      path: relativePath(cwd, join(packagesDir, entry.name)),
-      manifestPath: relativePath(cwd, manifestPath),
-      name: manifest.name ?? entry.name,
-      description: manifest.description ?? "",
-      bin: manifest.bin ?? {},
-      exports: manifest.exports ?? {},
-      dependencies: manifest.dependencies ?? {},
-      devDependencies: manifest.devDependencies ?? {},
-      optionalDependencies: manifest.optionalDependencies ?? {},
-      peerDependencies: manifest.peerDependencies ?? {},
-    });
+    const nextAbsolutePath = join(currentAbsolutePath, segment);
+    if (!existsSync(nextAbsolutePath)) {
+      return;
+    }
+
+    visit(nextAbsolutePath, normalizePath(join(currentRelativePath, segment)), index + 1);
   }
 
-  return manifests.sort((left, right) => left.path.localeCompare(right.path));
+  visit(cwd, "", 0);
+  return matches;
+}
+
+function collectWorkspaceManifests(cwd, workspacePatterns) {
+  const fallbackPatterns =
+    workspacePatterns.length > 0
+      ? workspacePatterns
+      : existsSync(resolve(cwd, "packages"))
+        ? ["packages/*"]
+        : [];
+  const manifestMap = new Map();
+
+  for (const pattern of fallbackPatterns) {
+    for (const directory of resolveWorkspaceDirectories(cwd, pattern)) {
+      const manifestPath = join(directory.absolutePath, "package.json");
+      const manifest = readJsonIfExists(manifestPath);
+      if (!manifest) {
+        continue;
+      }
+
+      const pathValue = directory.relativePath;
+      manifestMap.set(pathValue, {
+        path: pathValue,
+        manifestPath: relativePath(cwd, manifestPath),
+        name: manifest.name ?? pathValue.split("/").at(-1),
+        description: manifest.description ?? "",
+        bin: manifest.bin ?? {},
+        exports: manifest.exports ?? {},
+        dependencies: manifest.dependencies ?? {},
+        devDependencies: manifest.devDependencies ?? {},
+        optionalDependencies: manifest.optionalDependencies ?? {},
+        peerDependencies: manifest.peerDependencies ?? {},
+      });
+    }
+  }
+
+  return [...manifestMap.values()].sort((left, right) => left.path.localeCompare(right.path));
 }
 
 function collectFiles(cwd, relativeDir, extensions) {
@@ -111,6 +222,71 @@ function collectHookFiles(cwd) {
     .filter((entry) => entry.isFile() && !entry.name.startsWith("."))
     .map((entry) => normalizePath(join(".husky", entry.name)))
     .sort();
+}
+
+function hasMeaningfulDirectoryEntries(pathValue) {
+  return readdirSync(pathValue, { withFileTypes: true }).some(
+    (entry) => !entry.name.startsWith(".") && (entry.isDirectory() || entry.isFile())
+  );
+}
+
+function collectImplementationRoots(cwd, workspacePatterns, workspacePackages) {
+  const roots = [];
+  const workspacePatternRoots = new Set(
+    workspacePatterns.map((pattern) => pattern.split("/").filter(Boolean)[0]).filter(Boolean)
+  );
+  const candidateRoots = [...new Set([...COMMON_IMPLEMENTATION_ROOTS, ...workspacePatternRoots])];
+
+  for (const rootName of candidateRoots) {
+    const absolutePath = resolve(cwd, rootName);
+    if (!existsSync(absolutePath) || !hasMeaningfulDirectoryEntries(absolutePath)) {
+      continue;
+    }
+
+    const workspaceUnitCount = workspacePackages.filter(
+      (pkg) => pkg.path === rootName || pkg.path.startsWith(`${rootName}/`)
+    ).length;
+
+    roots.push({
+      path: rootName,
+      kind:
+        workspacePatternRoots.has(rootName) || workspaceUnitCount > 0
+          ? "workspace-root"
+          : "code-root",
+      workspaceUnitCount,
+    });
+  }
+
+  return roots;
+}
+
+function extractReadmeSummary(source) {
+  if (!source) {
+    return null;
+  }
+
+  let inFence = false;
+  const paragraph = [];
+
+  for (const line of source.split(/\r?\n/u)) {
+    const trimmed = line.trim();
+
+    if (trimmed.startsWith("```")) {
+      inFence = !inFence;
+      continue;
+    }
+
+    if (inFence || trimmed === "" || trimmed.startsWith("#")) {
+      if (paragraph.length > 0) {
+        break;
+      }
+      continue;
+    }
+
+    paragraph.push(trimmed);
+  }
+
+  return paragraph.length > 0 ? paragraph.join(" ").replace(/\s+/gu, " ") : null;
 }
 
 function inferPackageRole(pkg) {
@@ -187,10 +363,15 @@ ${options.body.replace(/^\n+/, "")}
 function scanRepoFacts(cwd) {
   const rootPackageJson = readJsonIfExists(resolve(cwd, "package.json")) ?? {};
   const packageManager = detectPackageManager(cwd, rootPackageJson);
-  const workspacePackages = collectPackageManifests(cwd);
+  const workspacePatterns = readWorkspacePatterns(cwd, rootPackageJson);
+  const workspacePackages = collectWorkspaceManifests(cwd, workspacePatterns);
+  const implementationRoots = collectImplementationRoots(cwd, workspacePatterns, workspacePackages);
   const workflowFiles = collectFiles(cwd, ".github/workflows", new Set([".yml", ".yaml"]));
   const hookFiles = collectHookFiles(cwd);
   const rootReadmePath = existsSync(resolve(cwd, "README.md")) ? "README.md" : null;
+  const rootReadmeSummary = rootReadmePath
+    ? extractReadmeSummary(readTextIfExists(resolve(cwd, rootReadmePath)))
+    : null;
   const agentsPath = existsSync(resolve(cwd, "AGENTS.md")) ? "AGENTS.md" : null;
   const scripts = rootPackageJson.scripts ?? {};
 
@@ -210,14 +391,16 @@ function scanRepoFacts(cwd) {
   return {
     rootPackageJson,
     packageManager,
+    workspacePatterns,
     workspacePackages,
+    implementationRoots,
     workflowFiles,
     hookFiles,
     rootReadmePath,
+    rootReadmeSummary,
     agentsPath,
     scripts,
-    hasWorkspaces:
-      Array.isArray(rootPackageJson.workspaces) && rootPackageJson.workspaces.length > 0,
+    hasWorkspaces: workspacePatterns.length > 0 || workspacePackages.length > 0,
     hasQualityScripts: ["check", "lint", "test", "build", "docs:lint"].some(
       (name) => name in scripts
     ),
@@ -225,6 +408,21 @@ function scanRepoFacts(cwd) {
 }
 
 function renderArchitectureDoc(facts, today) {
+  const intro =
+    facts.rootReadmeSummary ??
+    rootPackageJsonDescription(facts.rootPackageJson) ??
+    "This document summarizes the repo's committed structure, major implementation surfaces, and how to navigate the codebase.";
+  const implementationRootBullets =
+    facts.implementationRoots.length > 0
+      ? facts.implementationRoots.map((root) => {
+          const detail =
+            root.workspaceUnitCount > 0
+              ? `${root.workspaceUnitCount} manifest-backed unit${root.workspaceUnitCount === 1 ? "" : "s"} beneath this root.`
+              : "Direct code root without workspace package manifests.";
+          return `\`${root.path}/\` — ${detail}`;
+        })
+      : ["No common implementation roots were detected."];
+
   const packageBullets =
     facts.workspacePackages.length > 0
       ? facts.workspacePackages.map((pkg) => {
@@ -235,34 +433,52 @@ function renderArchitectureDoc(facts, today) {
           return `\`${pkg.name}\` (${pkg.path}) — ${inferPackageRole(pkg)}${relation}`;
         })
       : [
-          "The repo does not expose workspace packages under `packages/`; the root package is the main implementation surface.",
+          "No workspace package manifests were detected; the root package is the main implementation surface.",
         ];
 
-  const body = `This repo uses a deterministic docs-governance workflow built around committed policy, generated config, and remark-based lint rules.
+  const workspacePatternBullets =
+    facts.workspacePatterns.length > 0
+      ? formatBullets(facts.workspacePatterns.map((pattern) => `\`${pattern}\``))
+      : "- No workspace patterns declared.";
+
+  const body = `${intro}
 
 ## Current Shape
 
 - Package manager: \`${facts.packageManager}\`
-- Workspace packages: ${facts.workspacePackages.length}
+- Workspace patterns: ${facts.workspacePatterns.length}
+- Workspace units with package manifests: ${facts.workspacePackages.length}
+- Implementation roots: ${facts.implementationRoots.length}
 - CI workflows: ${facts.workflowFiles.length}
 - Local hooks: ${facts.hookFiles.length}
 
-## Package Roles
+## Workspace Roots
+
+${workspacePatternBullets}
+
+## Implementation Roots
+
+${formatBullets(implementationRootBullets)}
+
+## Manifest-Backed Units
 
 ${formatBullets(packageBullets)}
-
-## Runtime Control Loop
-
-1. Initialize a repo with \`recall-docs-governance init --profile repo-docs\`.
-2. Optionally run \`recall-docs-governance populate --profile repo-docs\` to seed first-pass docs from repo facts.
-3. Run \`pnpm docs:lint\` or the equivalent package-manager command.
-4. Fix schema, taxonomy, freshness, reachability, and link failures until the docs graph is trustworthy again.
 
 ## Supporting Sources
 
 - ${facts.rootReadmePath ? `\`${facts.rootReadmePath}\`` : "No root README detected"}
 - ${facts.agentsPath ? `\`${facts.agentsPath}\`` : "No AGENTS.md detected"}
-- ${facts.workspacePackages.length > 0 ? "Workspace package manifests under `packages/*/package.json`." : "No workspace package manifests detected."}`;
+- ${
+    facts.workspacePackages.length > 0
+      ? "Workspace package manifests discovered from declared workspace patterns."
+      : "No workspace package manifests detected."
+  }
+
+## Reading Order
+
+1. Start with \`docs/INDEX.md\` for the rooted docs graph.
+2. Use the implementation reference docs to identify the main code roots and units.
+3. Use the commands reference and repo scripts to understand quality gates and local workflows.`;
 
   return {
     path: "docs/explanation/system-architecture.md",
@@ -271,17 +487,19 @@ ${formatBullets(packageBullets)}
       id: "system-architecture",
       title: "System Architecture",
       summary:
-        "Deterministic overview of the repo structure, packages, and docs-governance control loop.",
-      tags: ["architecture", "docs-governance", "repo-map"],
+        "Overview of the repo structure, workspace units, and primary implementation surfaces.",
+      tags: ["architecture", "repo-map", "workspace"],
       today,
       codePaths: [
         ...(facts.rootReadmePath ? [facts.rootReadmePath] : []),
         ...(facts.agentsPath ? [facts.agentsPath] : []),
+        ...facts.implementationRoots.map((root) => root.path),
         ...facts.workspacePackages.map((pkg) => pkg.path),
       ],
       relatedDocs: [
         "../reference/commands-and-quality-gates.md",
         ...(facts.workspacePackages.length > 0 ? ["../reference/workspace-packages.md"] : []),
+        ...(facts.implementationRoots.length > 0 ? ["../reference/implementation-roots.md"] : []),
         ...(facts.hasQualityScripts ? ["../how-to/run-local-quality-checks.md"] : []),
       ],
       heading: "System Architecture",
@@ -289,6 +507,12 @@ ${formatBullets(packageBullets)}
     }),
     label: "System architecture",
   };
+}
+
+function rootPackageJsonDescription(rootPackageJson) {
+  return typeof rootPackageJson?.description === "string" && rootPackageJson.description.trim()
+    ? rootPackageJson.description.trim()
+    : null;
 }
 
 function renderCommandsDoc(facts, today) {
@@ -392,6 +616,52 @@ ${rows}
   };
 }
 
+function renderImplementationRootsDoc(facts, today) {
+  const rows = facts.implementationRoots
+    .map(
+      (root) =>
+        `| \`${escapeTableCell(root.path)}/\` | ${escapeTableCell(root.kind)} | ${escapeTableCell(
+          root.workspaceUnitCount > 0
+            ? `${root.workspaceUnitCount} manifest-backed unit${root.workspaceUnitCount === 1 ? "" : "s"}`
+            : "Direct implementation root"
+        )} |`
+    )
+    .join("\n");
+
+  const body = `## Implementation Roots
+
+| Root | Type | Notes |
+| --- | --- | --- |
+${rows}
+
+## Reading Order
+
+- Start with the roots that contain the repo's main runtime or product logic.
+- Use package/unit docs when a root contains manifest-backed workspace units.
+- Use local README files or entrypoints under each root when deeper subsystem detail is needed.`;
+
+  return {
+    path: "docs/reference/implementation-roots.md",
+    source: createDocSource({
+      docType: "reference",
+      id: "implementation-roots",
+      title: "Implementation Roots",
+      summary: "Reference map for the repo's primary implementation roots and major code surfaces.",
+      tags: ["reference", "repo-map", "structure"],
+      today,
+      codePaths: facts.implementationRoots.map((root) => root.path),
+      relatedDocs: [
+        "../explanation/system-architecture.md",
+        ...(facts.workspacePackages.length > 0 ? ["./workspace-packages.md"] : []),
+        "../reference/commands-and-quality-gates.md",
+      ],
+      heading: "Implementation Roots",
+      body,
+    }),
+    label: "Implementation roots",
+  };
+}
+
 function renderHowToDoc(facts, today) {
   const commands = ["check", "lint", "test", "build", "docs:lint"].filter(
     (name) => name in facts.scripts
@@ -457,6 +727,10 @@ function planPopulateDocs(facts, today) {
 
   if (facts.workspacePackages.length > 0) {
     docs.push(renderWorkspacePackagesDoc(facts, today));
+  }
+
+  if (facts.implementationRoots.length > 0) {
+    docs.push(renderImplementationRootsDoc(facts, today));
   }
 
   if (facts.hasQualityScripts || facts.hookFiles.length > 0) {
